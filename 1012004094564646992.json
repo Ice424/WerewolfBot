@@ -1,0 +1,18 @@
+{
+    "Villager": {
+        "chance": 0,
+        "count": 1
+    },
+    "Seer": {
+        "chance": 100,
+        "count": 1
+    },
+    "Medic": {
+        "chance": 100,
+        "count": 0
+    },
+    "Werewolf": {
+        "chance": 100,
+        "count": 1
+    }
+}
