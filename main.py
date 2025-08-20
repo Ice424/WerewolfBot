@@ -33,15 +33,21 @@ class GameStartedError(Exception):
 class Player():
     def __init__(self, user:disnake.Member) -> None:
         self.name = user.global_name
-        self.member = user
+        self.member: disnake.Member = user
         self.id = user.id
         self.role: R.Role
         self.is_alive = True
         self.ready_event = asyncio.Event()
-  
+        
+        #Vote Handling
+        self.target: Player | None  = None
+        self.done = False
+        self.embed_id = disnake.Message
+
     
     async def send(self, msg) -> None:
         await self.member.send(msg)
+
     async def kill(self, reason):
         self.is_alive = False
         embed = disnake.Embed(
@@ -50,8 +56,56 @@ class Player():
             color=disnake.Color.red()
         )
         await self.member.send(embed=embed)
-
+    
+    async def send_vote(self, game:"Game"):
+        self.target = None
+        self.done = False
+        targets = {p.name:  str(p.member.id) for p in game.players.values() if p.is_alive}
+        targets["Skip"] = "0"
+        embed = disnake.Embed(
+            title="Choose a player to vote out",
+            color=disnake.Colour.gold()
+        )
         
+        for player in game.players.values():
+            embed.add_field(name=player.name, value="Skip", inline=True)
+        self.embed_id = await self.member.send(embed=embed)
+        
+        await self.member.send(
+                    components=[
+                        disnake.ui.StringSelect(
+                            options=targets,
+                            custom_id=f"VoteSelect {game.start_message} {self.id}"),
+                        disnake.ui.Button(
+                            label="Confirm",
+                            style=disnake.ButtonStyle.success,
+                            custom_id=f"VoteConfirm {game.start_message} {self.id}"),])
+    
+    async def vote_confirm(self, player: "Player", game:"Game") ->  None:
+        if not self.target:
+            await player.send(F"You decided to skip")
+        elif not self.done:
+            game.votes.append(self.target)
+            await player.send(F"You voted for {self.target.name}")
+        player.ready_event.set()
+        self.done = True
+            
+    async def update_message(self, game: "Game"):
+        embed = disnake.Embed(
+            title="Chose a person to kill",
+            color=disnake.Colour.gold()
+        )
+        for player in game.players.values():
+            if player.target is None:
+                value = "Skip"
+            elif player.done:
+                value = player.target.name + " ✅"
+            else:
+                value = player.target.name
+            embed.add_field(name=player.name, value=value, inline=True)
+        
+        await self.embed_id.edit(embed=embed)
+    
 
 class Game():
     
@@ -61,9 +115,13 @@ class Game():
         self.game_running = False
         self.id = channel.guild.id
         self.players: dict[int, Player] = {}
+        
         self.wolf_kills: list[Player] = []
         self.wolves_have_killed = False
         self.players_to_kill: dict[int, str] = {}
+        
+        self.votes = list[Player]
+        self.vote_concluded = False
         
     async def start(self, inter: disnake.MessageInteraction) -> None:
         if self.game_running:
@@ -74,11 +132,12 @@ class Game():
         await asyncio.sleep(5)
     
         while self.game_running:
-            await self.night_phase()
-            await self.resolve_night()
+            #await self.night_phase()
+            #await self.resolve_night()
             self.win_check()
             if self.game_running:
                 await self.day_phase()
+                await self.resolve_day()
                 self.win_check()
         
     
@@ -143,10 +202,36 @@ class Game():
             self.wolves_have_killed = True
             for wolf in wolfs:
                 await wolf.send(f"{chosen_player.name} was killed")
+                
+    async def  check_votes(self):
+        players = [p for p in self.players.values() if p.is_alive]
+        players_ready = all(player.role.done for player in players)
+        if players_ready and not self.vote_concluded:
+            votes = [p.role.target for p in players]
+            vote_counts = Counter(votes)
+            max_votes = max(vote_counts.values())
+            most_voted_players = [player for player, count in vote_counts.items() if count == max_votes]
+            if len(most_voted_players) == 1:
+                # Single player with most votes
+                chosen_player = most_voted_players[0]
+            else:
+                # Tie
+                chosen_player = random.choice(most_voted_players)
+            self.players_to_kill[chosen_player.id] = random.choice(VILLAGER_KILL_MESSAGES)
+
+            self.vote_concluded = True
+            
+            for player in players:
+                await player.send(f"{chosen_player.name} was killed")
             
             
         
     async def resolve_night(self):
+        
+        for player in self.players_to_kill.keys():
+            await self.players[player].kill(self.players_to_kill[player])
+    
+    async def resolve_day(self):
         
         for player in self.players_to_kill.keys():
             await self.players[player].kill(self.players_to_kill[player])
@@ -164,6 +249,17 @@ class Game():
             killed = [self.players[p].name for p in self.players_to_kill.keys()]
             print(killed)
         self.players_to_kill = {}
+        
+        async with asyncio.TaskGroup() as tg:
+            for player in self.players.values():
+                player.ready_event.clear()
+                tg.create_task(player.send_vote(self))
+                
+        await asyncio.gather(*(p.ready_event.wait() for p in self.players.values() if p.is_alive))
+        # At this point everyone has acted
+        print("FinishedDayPhase")
+        
+        
         
     def win_check(self):
         pass
@@ -376,6 +472,17 @@ async def handle_button_click(inter: disnake.MessageInteraction):
         await inter.response.defer(with_message=False)
         return
     
+    if inter.data.custom_id.startswith("VoteConfirm"):
+        _, game_id, player_id = inter.data.custom_id.split(" ")
+        game_id, player_id = int(game_id), int(player_id) 
+        game = games[game_id]
+        await game.players[player_id].vote_confirm(game.players[player_id], game)
+        await inter.response.defer(with_message=False)
+        async with asyncio.TaskGroup() as tg:
+            for player in game.players.values():
+                tg.create_task(player.update_message(game))
+        return
+    
 
         
         
@@ -407,9 +514,30 @@ async def handle_dropdown_click(inter: disnake.MessageInteraction):
         _, game_id, player_id = inter.data.custom_id.split(" ")
 
         game = games[int(game_id)]
-        seer = game.players[int(player_id)]
-        seer.role.target = game.players[target_id]
+        player = game.players[int(player_id)]
+        player.role.target = game.players[target_id]
         await inter.response.defer(with_message=False)
+        return
+    
+    if inter.data.custom_id.startswith("VoteSelect"):
+        
+        if not inter.data.values:
+            return
+        target_id = int(inter.data.values[0])
+        _, game_id, player_id = inter.data.custom_id.split(" ")
+        
+            
+        
+        game = games[int(game_id)]
+        player = game.players[int(player_id)]
+        if target_id == 0:
+            player.target = None
+        else:
+            player.target = game.players[target_id]
+        await inter.response.defer(with_message=False)
+        async with asyncio.TaskGroup() as tg:
+            for player in game.players.values():
+                tg.create_task(player.update_message(game))
         return
         
         

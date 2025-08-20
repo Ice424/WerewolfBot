@@ -95,7 +95,7 @@ class Medic(Role):
     def __init__(self):
         super().__init__("Medic", "Village")
 
-    async def night_action(self, game: "Game", player: "Player") -> None:
+    async def night_action(self, player: "Player", game: "Game") -> None:
         pass
 
 
@@ -172,4 +172,3 @@ class Werewolf(Role):
             await player.send(f"You are a {self.name}\nGame start in 5s")
         else:
             await player.send(f"There are {len(wolves)} wolves, you are one of them. \n{'\n'.join(wolves)}\nGame start in 5s")
-        
