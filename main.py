@@ -87,8 +87,10 @@ class Player():
         elif not self.done:
             game.votes.append(self.target)
             await player.send(F"You voted for {self.target.name}")
-        player.ready_event.set()
         self.done = True
+        await game.check_votes()
+        player.ready_event.set()
+        
             
     async def update_message(self, game: "Game"):
         embed = disnake.Embed(
@@ -96,7 +98,9 @@ class Player():
             color=disnake.Colour.gold()
         )
         for player in game.players.values():
-            if player.target is None:
+            if player.target is None and player.done:
+                value = "Skip  ✅"
+            elif player.target is None:
                 value = "Skip"
             elif player.done:
                 value = player.target.name + " ✅"
@@ -120,7 +124,7 @@ class Game():
         self.wolves_have_killed = False
         self.players_to_kill: dict[int, str] = {}
         
-        self.votes = list[Player]
+        self.votes: list[Player] = []
         self.vote_concluded = False
         
     async def start(self, inter: disnake.MessageInteraction) -> None:
@@ -203,26 +207,8 @@ class Game():
             for wolf in wolfs:
                 await wolf.send(f"{chosen_player.name} was killed")
                 
-    async def  check_votes(self):
-        players = [p for p in self.players.values() if p.is_alive]
-        players_ready = all(player.role.done for player in players)
-        if players_ready and not self.vote_concluded:
-            votes = [p.role.target for p in players]
-            vote_counts = Counter(votes)
-            max_votes = max(vote_counts.values())
-            most_voted_players = [player for player, count in vote_counts.items() if count == max_votes]
-            if len(most_voted_players) == 1:
-                # Single player with most votes
-                chosen_player = most_voted_players[0]
-            else:
-                # Tie
-                chosen_player = random.choice(most_voted_players)
-            self.players_to_kill[chosen_player.id] = random.choice(VILLAGER_KILL_MESSAGES)
-
-            self.vote_concluded = True
-            
-            for player in players:
-                await player.send(f"{chosen_player.name} was killed")
+    
+      
             
             
         
@@ -247,11 +233,10 @@ class Game():
             await self.message_all(alive, "No one died")
         else:
             killed = [self.players[p].name for p in self.players_to_kill.keys()]
-            print(killed)
         self.players_to_kill = {}
         
         async with asyncio.TaskGroup() as tg:
-            for player in self.players.values():
+            for player in alive:
                 player.ready_event.clear()
                 tg.create_task(player.send_vote(self))
                 
@@ -264,6 +249,36 @@ class Game():
     def win_check(self):
         pass
     
+
+async def vote(game: Game, vote_id:str, voters: list[Player], options: list[Player]) -> None:
+    pass
+
+        
+async def  check_votes(self):
+    players = [p for p in self.players.values() if p.is_alive]
+    players_ready = all(player.done for player in players)
+    msg = ""
+    if players_ready and not self.vote_concluded:
+        votes = [p.target for p in players]
+        vote_counts = Counter(votes)
+        max_votes = max(vote_counts.values())
+        most_voted_players = [player for player, count in vote_counts.items() if count == max_votes]
+        if len(most_voted_players) == 1:
+            # Single player with most votes
+            chosen_player = most_voted_players[0]
+        else:
+            # Tie
+            chosen_player = None
+            msg = "The vote was a tie therefore "
+        self.vote_concluded = True
+        if chosen_player == None:
+            msg = (msg + "The vote was skipped").lower().capitalize()
+        else:
+            self.players_to_kill[chosen_player.id] = random.choice(VILLAGER_KILL_MESSAGES)
+            msg = f"{chosen_player.name} was voted out"
+        async with asyncio.TaskGroup() as tg:
+            for player in players:
+                await player.send(msg)
 # Config Handling
 
 def load_config(guild_id: int) -> dict[str, dict[str, int]]:

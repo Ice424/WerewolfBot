@@ -5,7 +5,7 @@ from disnake.ext import commands
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from main import Player, Game
+    from main import Player, Game, Vote
 
 ROLE_REGISTRY: dict[str, "Role"] = {}
 
