@@ -250,7 +250,17 @@ class Game():
         pass
     
 
-async def vote(game: Game, vote_id:str, voters: list[Player], options: list[Player]) -> None:
+async def vote(game: Game, vote_id:str, voters: list[Player], options: list[Player], role=False, update=True) -> None:
+    """Creates a vote of players and returns the winner of the vote
+    Args:
+        game: game object that players are associated with
+        vote_id: string that identifies the vote and is embedded in the msg
+        voters: list of players that receive the vote
+        options: list of players to choose from
+        role: wether or not this is the roll class calling the vote
+        update: wether or not the vote call an update function
+    Returns:
+        player: the player object of the player that was chosen"""
     pass
 
         
@@ -493,6 +503,7 @@ async def handle_button_click(inter: disnake.MessageInteraction):
         game = games[game_id]
         await game.players[player_id].vote_confirm(game.players[player_id], game)
         await inter.response.defer(with_message=False)
+        
         async with asyncio.TaskGroup() as tg:
             for player in game.players.values():
                 tg.create_task(player.update_message(game))
