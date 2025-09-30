@@ -1,20 +1,21 @@
 {
     "Villager": {
         "chance": 0,
-        "count": 1,
+        "count": 0,
         "can_skip_vote": 1,
-        "dead_see_roles": true
+        "dead_see_roles": 1
     },
     "Seer": {
-        "chance": 50,
+        "chance": 100,
         "count": 1
     },
     "Medic": {
-        "chance": 50,
+        "chance": 100,
         "count": 1
     },
     "Werewolf": {
         "chance": 100,
-        "count": 1
+        "count": 1,
+        "can_skip_vote": 1
     }
 }

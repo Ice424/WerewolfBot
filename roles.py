@@ -17,10 +17,11 @@ def register_role(cls):
 
 
 class Role(ABC):    
-    def __init__(self, name: str, team:str) -> None:
+    def __init__(self, name: str, team:str, colour: disnake.Colour) -> None:
         self.done = False
         self.name = name
         self.team = team
+        self.colour = colour 
         self.config = {"chance": 50, "count": 1}
         
     
@@ -29,7 +30,12 @@ class Role(ABC):
         pass           
     
     async def assign_action(self, player: "Player", game: "Game") -> None:
-        await player.send(f"You are a {self.name}\nGame start in 5s")
+        embed = disnake.Embed(
+                title=f"You are a {self.name}",
+                description="Game start in 5s",
+                color=self.colour
+                )
+        await player.member.send(embed=embed)
     def __str__(self) -> str:
         return self.name
         
@@ -37,7 +43,7 @@ class Role(ABC):
 @register_role
 class Villager(Role):
     def __init__(self) -> None:
-        super().__init__("Villager", "Village")
+        super().__init__("Villager", "Village", disnake.Colour.yellow())
         self.config = {"chance": 0,
                        "count": 1,
                        "can_skip_vote": 1,
@@ -53,12 +59,9 @@ class Villager(Role):
 class Seer(Role):
     def __init__(self):
         self.target: Player | None = None
-        super().__init__("Seer", "Village")
+        super().__init__("Seer", "Village", disnake.Colour.purple())
 
     async def night_action(self, player: "Player", game: "Game") -> None:
-        self.target = None
-        self.done = False
-        print("hello?")
         targets = [p for p in game.players.values()]
         targets.remove(player)
         to_see = await game.vote(
@@ -74,17 +77,29 @@ class Seer(Role):
 @register_role
 class Medic(Role):
     def __init__(self):
-        super().__init__("Medic", "Village")
+        super().__init__("Medic", "Village", disnake.Colour.green())
 
     async def night_action(self, player: "Player", game: "Game") -> None:
+        targets = [p for p in game.players.values() if p.is_alive]
+        targets.remove(player)
+        to_protect = await game.vote(
+            "Choose a player to protect", 
+            disnake.Colour.green(),
+            "seer",
+            [player],
+            targets,
+            False)
+        if to_protect:
+            game.safe_players.append(to_protect)
+            await player.send(f"You protected {to_protect.name} from the wolves")
         pass
 
 
 @register_role
 class Werewolf(Role):
     def __init__(self):
-        super().__init__("Werewolf", "Wolves")
-        self.config = {"chance": 100, "count": 1}
+        super().__init__("Werewolf", "Wolves", disnake.Colour.red())
+        self.config = {"chance": 100, "count": 1, "can_skip_vote": 1}
     
     async def night_action(self, player: "Player", game: "Game") -> None:
         pass    
@@ -94,6 +109,18 @@ class Werewolf(Role):
         wolves = [p.name for p in game.players.values() if p.role.team == "Wolves"]
         
         if len(wolves) == 1:
-            await player.send(f"You are a {self.name}\nGame start in 5s")
+            embed = disnake.Embed(
+                title=f"You are a {self.name}",
+                description="Game start in 5s",
+                color=disnake.Colour.red()
+                )
+            await player.member.send(embed=embed)
         else:
-            await player.send(f"There are {len(wolves)} wolves, you are one of them. \n{'\n'.join(wolves)}\nGame start in 5s")
+            embed = disnake.Embed(
+                title=f"There are {len(wolves)} wolves, you are one of them",
+                description="Game start in 5s",
+                color=disnake.Colour.red()
+                )
+            for wolf in wolves:
+                embed.add_field(name="Inline Title", value=wolf, inline=True)
+            await player.member.send(embed=embed)
