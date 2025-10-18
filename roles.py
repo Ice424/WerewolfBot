@@ -56,7 +56,7 @@ class Villager(Role):
 class Seer(Role):
     def __init__(self):
         self.target: Player | None = None
-        super().__init__("Seer", "Village", disnake.Colour.purple())
+        super().__init__("Seer", "Villagers", disnake.Colour.purple())
 
     async def night_action(self, player: "Player", game: "Game") -> None:
         targets = [p for p in game.players.values()]
@@ -64,7 +64,7 @@ class Seer(Role):
         to_see = await game.vote(
             "Choose a player to see",
             disnake.Colour.purple(),
-            "seer",
+            str(player.id),
             [player],
             targets,
             False,
@@ -76,7 +76,7 @@ class Seer(Role):
 @register_role
 class Medic(Role):
     def __init__(self):
-        super().__init__("Medic", "Village", disnake.Colour.green())
+        super().__init__("Medic", "Villagers", disnake.Colour.green())
 
     async def night_action(self, player: "Player", game: "Game") -> None:
         targets = [p for p in game.players.values() if p.is_alive]
@@ -84,7 +84,7 @@ class Medic(Role):
         to_protect = await game.vote(
             "Choose a player to protect",
             disnake.Colour.green(),
-            "seer",
+            str(player.id),
             [player],
             targets,
             False,
@@ -123,4 +123,3 @@ class Werewolf(Role):
             for wolf in wolves:
                 embed.add_field(name="Inline Title", value=wolf, inline=True)
             await player.member.send(embed=embed)
-

@@ -36,7 +36,7 @@ VILLAGER_KILL_MESSAGES = [
 ]
 
 games: dict[int, "Game"] = {}
-
+"""Msg id of the start msg: game object"""
 
 class GameStartedError(Exception):
     pass
@@ -83,6 +83,7 @@ class Game:
 
         self.players_to_kill: dict[Player, str] = {}
         self.safe_players: list[Player] = []
+        self.winning_team = ""
 
     async def start(self, inter: disnake.MessageInteraction) -> None:
         if self.game_running:
@@ -93,20 +94,45 @@ class Game:
         await asyncio.sleep(5)
 
         while self.game_running:
-            #await self.night_phase()
+            await self.night_phase()
             self.win_check()
             if self.game_running:
                 await self.day_phase()
                 self.win_check()
+        
+        winning_players = [p for p in self.players.values() if p.role.team == self.winning_team]
+        losing_players = [p for p in self.players.values() if p.role.team != self.winning_team]
+        win_embed = disnake.Embed(
+                title=f"You won",
+                description=f"The {self.winning_team} were successful",
+                color=disnake.Colour.green(),
+            )
+        lose_embed = disnake.Embed(
+            title=f"You lost",
+            description=f"The {self.winning_team} won",
+            color=disnake.Colour.red(),
+        )
+        
+        async with asyncio.TaskGroup() as tg:
+            for player in winning_players:
+                tg.create_task(player.member.send(embed=win_embed))
+            for player in losing_players:
+                tg.create_task(player.member.send(embed=lose_embed))
+        
+        stop_game(self)
+        
 
     async def kill_players(self, msg: str):
+        killed_any = False
         for player in self.players_to_kill.keys():
             if player not in self.safe_players:
                 await player.kill(self.players_to_kill[player])
-
+                killed_any =True
                 recipients = [p for p in self.players.values() if p != player]
 
                 await self.message_all(recipients, msg.format(name=player.name))
+        if not killed_any:
+            await self.message_all([p for p in self.players.values() if p.is_alive], "No one was killed")
         self.players_to_kill = {}
         self.safe_players = []
 
@@ -147,7 +173,6 @@ class Game:
                 tg.create_task(player.role.night_action(player, self))
         print("FinishedNightActions")
 
-        print(self.safe_players)
         await self.kill_players("{name} was killed")
         print("FinishedNightPhase")
 
@@ -192,9 +217,16 @@ class Game:
         print("FinishedDayPhase")
 
     def win_check(self):
-        roles = [p.role.team for p in self.players.values()]
+        roles = [p.role.team for p in self.players.values() if p.is_alive]
         teams = Counter(roles)
-        print(teams)
+
+        if teams["Villagers"] == 1:
+            self.game_running = False
+            self.winning_team = "Wolves"
+        
+        if teams["Wolves"] == 0:
+            self.game_running = False
+            self.winning_team = "Villagers"
 
     async def vote(
         self,
@@ -278,17 +310,20 @@ class Game:
 
         @bot.listen("on_dropdown")
         async def handle_dropdown(inter: disnake.MessageInteraction):
-            print("Dropdown")
+            
+            
             nonlocal votes
+
             if not inter.data.custom_id.startswith(f"Select {vote_id}"):
                 return
+            await inter.response.defer(with_message=False)
             _, _, game_id, voter_id = inter.data.custom_id.split(" ")
             if int(game_id) != self.start_message_id:
                 return
             if not inter.data.values:
                 return
             votes[int(voter_id)] = int(inter.data.values[0])
-            await inter.response.defer(with_message=False)
+            
             if update:
                 await update_message()
 
@@ -297,6 +332,7 @@ class Game:
             nonlocal votes
             nonlocal confirmed
             if not inter.data.custom_id.startswith(f"Confirm {vote_id}"):
+                
                 return
             _, _, game_id, voter_id = inter.data.custom_id.split(" ")
             if int(game_id) != self.start_message_id:
@@ -527,8 +563,12 @@ async def handle_button_click(inter: disnake.MessageInteraction):
         return
 
 
+def stop_game(game: Game):
+    games.pop(game.start_message_id)
+
+
+
 if __name__ == "__main__":
     with open("token.txt", "r") as f:
         token = f.read()
     bot.run(token)
-
