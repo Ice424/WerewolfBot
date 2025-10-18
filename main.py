@@ -95,10 +95,8 @@ class Game:
 
         while self.game_running:
             await self.night_phase()
-            self.win_check()
             if self.game_running:
                 await self.day_phase()
-                self.win_check()
         
         winning_players = [p for p in self.players.values() if p.role.team == self.winning_team]
         losing_players = [p for p in self.players.values() if p.role.team != self.winning_team]
@@ -113,11 +111,20 @@ class Game:
             color=disnake.Colour.red(),
         )
         
+        role_embed = disnake.Embed(
+            title = "Roles"
+        )
+        for p in self.players.values():
+            role_embed.add_field(name=p.name, value=p.role.name, inline=True)
+                    
+        
         async with asyncio.TaskGroup() as tg:
             for player in winning_players:
                 tg.create_task(player.member.send(embed=win_embed))
+                tg.create_task(player.member.send(embed=role_embed))
             for player in losing_players:
                 tg.create_task(player.member.send(embed=lose_embed))
+                tg.create_task(player.member.send(embed=role_embed))
         
         stop_game(self)
         
@@ -127,6 +134,15 @@ class Game:
         for player in self.players_to_kill.keys():
             if player not in self.safe_players:
                 await player.kill(self.players_to_kill[player])
+                self.win_check()
+                if self.config["Villager"]["dead_see_roles"] and self.game_running:
+                    embed = disnake.Embed(
+                        title = "Roles"
+                    )
+                    for p in self.players.values():
+                        embed.add_field(name=p.name, value=p.role.name, inline=True)
+                    await player.member.send(embed=embed)
+                
                 killed_any =True
                 recipients = [p for p in self.players.values() if p != player]
 
@@ -204,7 +220,7 @@ class Game:
             alive,
             alive,
             True,
-            True,
+            bool(self.config["Villager"]["can_skip_vote"]),
         )
 
         if voted:
